@@ -1,0 +1,8 @@
+{
+  "name": "Copy of PickIT -From Request to Ready",
+  "description": "PickIT transforms physical print shop queues into a streamlined digital workflow with live status tracking and time certainty.",
+  "requestFramePermissions": [
+    "camera",
+    "geolocation"
+  ]
+}
