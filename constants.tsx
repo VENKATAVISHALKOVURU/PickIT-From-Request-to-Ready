@@ -19,6 +19,7 @@ export const Icons = {
   Sparkle: () => <i className="fa-solid fa-wand-magic-sparkles"></i>,
   Settings: () => <i className="fa-solid fa-sliders"></i>,
   Shop: () => <i className="fa-solid fa-shop"></i>,
+  Scanner: () => <i className="fa-solid fa-magnifying-glass-chart"></i>,
   Logo: ({ className }: { className?: string }) => (
     <svg className={className} width="140" height="40" viewBox="0 0 140 40" fill="none" xmlns="http://www.w3.org/2000/svg">
       <circle cx="20" cy="20" r="17" fill="#1E293B"/>

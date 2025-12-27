@@ -3,6 +3,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { PrintJob, JobStatus, Shop } from '../types';
 import { Icons } from '../constants';
 import { Html5Qrcode } from 'html5-qrcode';
+import { GoogleGenAI } from "@google/genai";
 
 interface Props {
   activeJob: PrintJob | null;
@@ -31,6 +32,11 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
   const [showUpiModal, setShowUpiModal] = useState(false);
   const [paymentState, setPaymentState] = useState<'IDLE' | 'PROCESSING' | 'VERIFYING' | 'SUCCESS' | 'FAILED'>('IDLE');
   
+  // AI Analysis States
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState<string | null>(null);
+  const [analyzedImage, setAnalyzedImage] = useState<string | null>(null);
+
   // New Scan Logic States
   const [scanState, setScanState] = useState<ScanState>('IDLE');
   const [detectedShopName, setDetectedShopName] = useState<string>('');
@@ -48,17 +54,15 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
         { facingMode: "environment" }, 
         config, 
         (decodedText) => {
-          // Detect format: https://pickit.app/shop/SHOP-XXXXXX
           const match = decodedText.match(/SHOP-[A-Z0-9]{6}/);
           if (match) {
             handleScanSuccess(match[0]);
           } else if (decodedText.includes('SHOP-')) {
-             // Fallback for just the ID
              const idMatch = decodedText.match(/SHOP-[A-Z0-9]{6}/);
              if (idMatch) handleScanSuccess(idMatch[0]);
           }
         },
-        () => {} // Silent failures for frames with no QR
+        () => {} 
       ).catch(err => {
         console.error("Camera start error", err);
         setScanState('DENIED');
@@ -76,12 +80,8 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
     if (qrScannerRef.current && qrScannerRef.current.isScanning) {
       await qrScannerRef.current.stop();
     }
-    
-    // Simulate lookup
     setDetectedShopName("Campus Fast-Print Hub");
     setScanState('SUCCESS');
-    
-    // Smooth transition to dashboard
     setTimeout(() => {
       onConnectShop(shopId);
       setScanState('IDLE');
@@ -91,11 +91,53 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
   const requestCamera = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      // Permission granted, close stream and start actual scanner
       stream.getTracks().forEach(track => track.stop());
       setScanState('SCANNING');
     } catch (err) {
       setScanState('DENIED');
+    }
+  };
+
+  const handleImageAnalysis = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      const reader = new FileReader();
+      
+      setIsAnalyzing(true);
+      setAnalysisResult(null);
+
+      reader.onload = async (ev) => {
+        const base64Data = (ev.target?.result as string).split(',')[1];
+        setAnalyzedImage(ev.target?.result as string);
+
+        try {
+          const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+          const response = await ai.models.generateContent({
+            model: 'gemini-3-pro-preview',
+            contents: {
+              parts: [
+                {
+                  inlineData: {
+                    mimeType: file.type,
+                    data: base64Data,
+                  },
+                },
+                {
+                  text: "You are a professional print quality assistant. Analyze this image for print quality. Check for resolution, legibility, and contrast for a campus shop. Provide specific advice to the student to ensure they get the best possible physical print. Keep it concise, professional, and helpful.",
+                },
+              ],
+            },
+          });
+
+          setAnalysisResult(response.text || "No analysis available.");
+        } catch (error) {
+          console.error("AI Analysis failed", error);
+          setAnalysisResult("Sorry, I couldn't analyze the image. Please check your connection and try again.");
+        } finally {
+          setIsAnalyzing(false);
+        }
+      };
+      reader.readAsDataURL(file);
     }
   };
 
@@ -131,13 +173,12 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
     if (e.target.files && e.target.files[0]) {
       const fileName = e.target.files[0].name;
       setIsUploading(true);
-      setUploadProgress(10); // Instant jump to show it started
+      setUploadProgress(10); 
       
       let progress = 10;
       const interval = setInterval(() => {
-        // Random increments feel more natural than static steps
         const increment = 10 + Math.floor(Math.random() * 20);
-        progress = Math.min(progress + increment, 95); // Don't hit 100 until it's actually finishing
+        progress = Math.min(progress + increment, 95); 
         setUploadProgress(progress);
         
         if (progress >= 95) {
@@ -242,7 +283,6 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
     );
   };
 
-  // --- START SCANNER UI RENDERING ---
   if (!isStudentConnected) {
     if (scanState === 'SUCCESS') {
       return (
@@ -288,14 +328,12 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
               <div className="flex-1 flex flex-col animate-in fade-in duration-500">
                  <div className="flex-1 relative rounded-[3rem] overflow-hidden bg-slate-900 border-4 border-slate-100 shadow-2xl">
                     <div id="qr-video-container" className="w-full h-full object-cover"></div>
-                    {/* Scanner Overlay Frame */}
                     <div className="absolute inset-0 pointer-events-none flex flex-col items-center justify-center">
                        <div className="w-64 h-64 border-2 border-white/50 rounded-[2.5rem] relative">
                           <div className="absolute -top-1 -left-1 w-12 h-12 border-t-4 border-l-4 border-indigo-500 rounded-tl-[1.5rem]"></div>
                           <div className="absolute -top-1 -right-1 w-12 h-12 border-t-4 border-r-4 border-indigo-500 rounded-tr-[1.5rem]"></div>
                           <div className="absolute -bottom-1 -left-1 w-12 h-12 border-b-4 border-l-4 border-indigo-500 rounded-bl-[1.5rem]"></div>
                           <div className="absolute -bottom-1 -right-1 w-12 h-12 border-b-4 border-r-4 border-indigo-500 rounded-br-[1.5rem]"></div>
-                          {/* Scanning Line Animation */}
                           <div className="absolute top-0 left-4 right-4 h-0.5 bg-indigo-400/50 blur-[2px] animate-bounce-slow"></div>
                        </div>
                     </div>
@@ -348,7 +386,6 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
       </div>
     );
   }
-  // --- END SCANNER UI RENDERING ---
 
   if (paymentState === 'SUCCESS') {
     return (
@@ -408,6 +445,51 @@ const StudentDashboard: React.FC<Props> = ({ activeJob, setActiveJob, shop, isSt
             )}
           </div>
         )}
+
+        {/* AI Analysis Tool */}
+        <div className="mt-6">
+          <div className="bg-gradient-to-br from-indigo-600 to-indigo-800 rounded-[2rem] p-6 text-white shadow-xl relative overflow-hidden">
+             <div className="absolute top-0 right-0 p-4 opacity-10 text-6xl">
+               <Icons.Sparkle />
+             </div>
+             <h3 className="text-lg font-bold mb-1 flex items-center gap-2">
+               AI Pre-Print Check
+               <span className="text-[10px] bg-white/20 px-2 py-0.5 rounded-full uppercase tracking-widest">Powered by Gemini</span>
+             </h3>
+             <p className="text-indigo-100 text-sm mb-6 leading-relaxed">
+               Unsure about image quality? Let our AI analyze legibility and resolution before you pay.
+             </p>
+             
+             {!isAnalyzing && !analysisResult ? (
+               <label className="inline-flex items-center gap-2 px-6 py-3 bg-white text-indigo-600 rounded-2xl font-bold text-sm cursor-pointer hover:bg-indigo-50 transition-colors shadow-lg active:scale-95">
+                 <Icons.Scanner />
+                 Check Image Quality
+                 <input type="file" className="hidden" accept="image/*" onChange={handleImageAnalysis} />
+               </label>
+             ) : isAnalyzing ? (
+               <div className="flex items-center gap-4 py-3">
+                  <div className="w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <p className="text-sm font-bold animate-pulse">Analyzing pixels...</p>
+               </div>
+             ) : (
+               <div className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/20 animate-in fade-in slide-in-from-top-2 duration-500">
+                  <div className="flex justify-between items-start mb-3">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">AI Report</p>
+                    <button onClick={() => {setAnalysisResult(null); setAnalyzedImage(null);}} className="text-white/60 hover:text-white transition-colors">
+                      <i className="fa-solid fa-rotate-right"></i>
+                    </button>
+                  </div>
+                  <div className="flex gap-4 mb-4">
+                    {analyzedImage && <img src={analyzedImage} alt="Analyzed" className="w-16 h-16 rounded-lg object-cover border border-white/20" />}
+                    <div className="text-[13px] font-medium leading-relaxed max-h-32 overflow-y-auto">
+                      {analysisResult}
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-white/40 italic font-medium">* Analysis based on digital preview quality.</p>
+               </div>
+             )}
+          </div>
+        </div>
 
         {!shop.isPaused && (
           <div className="mt-8 space-y-6">
